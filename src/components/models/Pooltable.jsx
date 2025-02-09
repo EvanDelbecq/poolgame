@@ -79,6 +79,8 @@ export default function Model(props) {
     position: [0, -0.1, 0]
   }),
   useRef())
+
+  console.log(nodes.borders.geometry)
   return (
     <group {...props} dispose={null}>
       <group scale={0.05} >

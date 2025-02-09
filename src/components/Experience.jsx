@@ -1,7 +1,9 @@
-import { OrbitControls } from '@react-three/drei'
+import { OrbitControls} from '@react-three/drei'
 import { Physics, Debug } from '@react-three/cannon'
 import Pooltable from './models/Pooltable'
 import PoolBall from './models/PoolBall'
+import {Perf} from 'r3f-perf'
+import ShootIndicator from './models/ShootIndicator'
 
 
 const Experience = () => {
@@ -10,8 +12,8 @@ const Experience = () => {
     const cueBall = 0
     const eightBall = 8
     const balls = [eightBall, ...solidBalls, ...stripedBalls]
-    const xStep = 0.35
-    const zStep = 0.20
+    const xStep = 0.3
+    const zStep = 0.175
     const ballPositions = {
         0: [-4, 4.34, 0], // cue ball position
         // First row
@@ -38,15 +40,16 @@ const Experience = () => {
 
   return (
     <>
-        <ambientLight intensity={5} />
+        <ambientLight intensity={1} color={'red'}/>
         <OrbitControls target={[0,4,0]} makeDefault/>
-        <spotLight position={[0, 15, 0]} angle={0.55} intensity={500} penumbra={1}  castShadow/>
+        {<spotLight position={[0, 15, 0]} angle={0.55} intensity={500} penumbra={0.2}  castShadow/> }
         {/* <mesh position={[0, 4.34, 0]}>
             <sphereGeometry args={[0.17, 32, 32]} />
             <meshStandardMaterial color={'white'} />
         </mesh> */}
-        <Physics gravity={[0,-9.8,0]}>
-            <Debug color={'blue'} scale={1}>
+        <Perf />
+        <Physics gravity={[0,-9.8,0]} broadphase='SAP'>
+            <Debug color={'blue'} scale={0}>
                 <PoolBall position={ballPositions[cueBall]} ballNumber={cueBall}/>
                 {balls.map(ball => <PoolBall key={ball} position={ballPositions[ball]} ballNumber={ball}/>)}
                 <Pooltable position={[0, 0, 0]} /> 
