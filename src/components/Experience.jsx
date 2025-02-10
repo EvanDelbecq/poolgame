@@ -1,5 +1,5 @@
 import { OrbitControls} from '@react-three/drei'
-import { Physics, Debug } from '@react-three/cannon'
+import { Physics } from '@react-three/rapier'
 import Pooltable from './models/Pooltable'
 import PoolBall from './models/PoolBall'
 import {Perf} from 'r3f-perf'
@@ -12,8 +12,8 @@ const Experience = () => {
     const cueBall = 0
     const eightBall = 8
     const balls = [eightBall, ...solidBalls, ...stripedBalls]
-    const xStep = 0.3
-    const zStep = 0.175
+    const xStep = 0.255
+    const zStep = 0.13
     const ballPositions = {
         0: [-4, 4.34, 0], // cue ball position
         // First row
@@ -48,12 +48,10 @@ const Experience = () => {
             <meshStandardMaterial color={'white'} />
         </mesh> */}
         <Perf />
-        <Physics gravity={[0,-9.8,0]} broadphase='SAP'>
-            <Debug color={'blue'} scale={0}>
-                <PoolBall position={ballPositions[cueBall]} ballNumber={cueBall}/>
-                {balls.map(ball => <PoolBall key={ball} position={ballPositions[ball]} ballNumber={ball}/>)}
-                <Pooltable position={[0, 0, 0]} /> 
-            </Debug>
+        <Physics debug gravity={ [ 0, - 9.81, 0 ] }>
+            <PoolBall position={ballPositions[cueBall]} ballNumber={cueBall}/>
+            {balls.map(ball => <PoolBall key={ball} position={ballPositions[ball]} ballNumber={ball}/>)}
+            <Pooltable position={[0, 0, 0]} /> 
         </Physics>
     </>
   )

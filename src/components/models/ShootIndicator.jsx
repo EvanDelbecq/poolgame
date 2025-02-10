@@ -5,7 +5,7 @@ import * as THREE from 'three'
 const ShootIndicator = ({forceVector, ...props}) => {
     const vector = useRef(new THREE.Vector3(0, 0, 0))
     useEffect(() => {
-        vector.current.set(forceVector.x, 0, forceVector.z)
+        vector.current.set(forceVector.x/20, 0, forceVector.z/20)
     }, [forceVector])
 
 return (
