@@ -15,27 +15,27 @@ const Experience = () => {
     const xStep = 0.255
     const zStep = 0.13
     const ballPositions = {
-        0: [-4, 4.34, 0], // cue ball position
+        0: [-4, 5, 0], // cue ball position
         // First row
-        1: [xStep, 4.34, 0],
+        1: [xStep, 5, 0],
         // Second row
-        9: [2 * xStep, 4.34, zStep],
-        3: [2 * xStep, 4.34, -zStep],
+        9: [2 * xStep, 5, zStep],
+        3: [2 * xStep, 5, -zStep],
         // Third row
-        10: [3 * xStep, 4.34, 2 * zStep],
-        8: [3 * xStep, 4.34, 0],
-        11: [3 * xStep, 4.34, -2 * zStep],
+        10: [3 * xStep, 5, 2 * zStep],
+        8: [3 * xStep, 5, 0],
+        11: [3 * xStep, 5, -2 * zStep],
         // Fourth row
-        6: [4 * xStep, 4.34, 3 * zStep],
-        14: [4 * xStep, 4.34, zStep],
-        2: [4 * xStep, 4.34, -zStep],
-        4: [4 * xStep, 4.34, -3 * zStep],
+        6: [4 * xStep, 5, 3 * zStep],
+        14: [4 * xStep, 5, zStep],
+        2: [4 * xStep, 5, -zStep],
+        4: [4 * xStep, 5, -3 * zStep],
         // Fifth row
-        5: [5 * xStep, 4.34, 4 * zStep],
-        12: [5 * xStep, 4.34, 2 * zStep],
-        13: [5 * xStep, 4.34, 0],
-        7: [5 * xStep, 4.34, -2 * zStep],
-        15: [5 * xStep, 4.34, -4 * zStep],
+        5: [5 * xStep, 5, 4 * zStep],
+        12: [5 * xStep, 5, 2 * zStep],
+        13: [5 * xStep, 5, 0],
+        7: [5 * xStep, 5, -2 * zStep],
+        15: [5 * xStep, 5, -4 * zStep],
     }
 
   return (

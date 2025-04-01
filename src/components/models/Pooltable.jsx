@@ -54,6 +54,7 @@ export default function Model(props) {
           restitution={0}
           type='fixed'
           colliders={'trimesh'}
+          userData={{ isHole: true, name: 'hole' }}
         >
           <mesh geometry={nodes.holes.geometry} material={materials['Pool_Table.001']} receiveShadow/>
         </RigidBody>

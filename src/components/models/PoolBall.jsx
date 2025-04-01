@@ -3,6 +3,8 @@ import { useEffect, useState, useRef } from "react"
 import * as THREE from "three"
 import ShootIndicator from "./ShootIndicator"
 import { BallCollider, RigidBody, vec3} from "@react-three/rapier"
+import { useGame } from '../../context/GameContext'
+
 
 const PoolBall = ({position, ballNumber, props}) => {
     const ref = useRef(null)
@@ -13,12 +15,15 @@ const PoolBall = ({position, ballNumber, props}) => {
     const [isShooting, setIsShooting] = useState(false)
     const [lookAt, setLookAt] = useState(new THREE.Vector3())
     const [force, setForce] = useState(new THREE.Vector3(0,0,0))
+    const [inHole, setInHole] = useState(false)
     const pos = useRef(new THREE.Vector3())
+    const { gameState, socket } = useGame()
 
     const handleClick = (e) => {
-        if (ballNumber !== 0 || isShooting ) return
-        controls.target.set(pos.current.x, pos.current.y, pos.current.z)
-        camera.position.set(pos.current.x,15,pos.current.z)
+        console.log(gameState.isMyTurn)
+        if (ballNumber !== 0 || isShooting || !gameState.isMyTurn ) return
+        controls.target.set(ref.current.translation().x, 4, ref.current.translation().z)
+        camera.position.set(ref.current.translation().x,15,ref.current.translation().z)
         setIsShooting(true)
     }               
     const normalizePointer = (pointer) => {
@@ -29,8 +34,8 @@ const PoolBall = ({position, ballNumber, props}) => {
         return new THREE.Vector3(-normalizedX, 0, normalizedY);
     }
 
-    const handleCollide = (e) => {
-        console.log(e)
+    const handleSleep = () => {
+        
     }
 
     
@@ -44,6 +49,9 @@ const PoolBall = ({position, ballNumber, props}) => {
                 controls.target.set(0, 4, 0)
                 setIsShooting(false)
                 if (controls) controls.enabled = true
+                
+                // Emit shot to other player
+                socket.emit('shot', { force: { x: force.x, y: 0, z: force.z } })
             }
         }
     
@@ -53,11 +61,8 @@ const PoolBall = ({position, ballNumber, props}) => {
                 window.removeEventListener('click', handleClick)
             }
         }
-    }, [isShooting, ref, controls, force])
+    }, [isShooting, ref, controls, force, socket])
 
-    useEffect(() => {
-
-    },[])
   return (
     <>
         <RigidBody 
@@ -69,6 +74,9 @@ const PoolBall = ({position, ballNumber, props}) => {
             canSleep={true}
             ref={ref}
             colliders={ false }
+            onCollisionEnter={(e) => {if (e.other.rigidBody.userData.isHole && inHole === false) setInHole(true)}}
+            onSleep={() => handleSleep() }
+            sensors={true}
             >
             <BallCollider mass={1} args={[0.13, 32, 32]}/>
             <mesh castShadow onClick={e => {handleClick(e)}} >
