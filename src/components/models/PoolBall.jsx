@@ -5,7 +5,6 @@ import ShootIndicator from "./ShootIndicator"
 import { BallCollider, RigidBody, vec3} from "@react-three/rapier"
 import { useGame } from '../../context/GameContext'
 
-
 const PoolBall = ({position, ballNumber, props}) => {
     const ref = useRef(null)
     const texture = useLoader(THREE.TextureLoader, `/textures/Ball${ballNumber}.jpg`)
@@ -15,17 +14,17 @@ const PoolBall = ({position, ballNumber, props}) => {
     const [isShooting, setIsShooting] = useState(false)
     const [lookAt, setLookAt] = useState(new THREE.Vector3())
     const [force, setForce] = useState(new THREE.Vector3(0,0,0))
-    const [inHole, setInHole] = useState(false)
     const pos = useRef(new THREE.Vector3())
-    const { gameState, socket } = useGame()
+    const { gameState, sendShot, socket } = useGame() // Use sendShot instead of socket directly
 
     const handleClick = (e) => {
-        console.log(gameState.isMyTurn)
-        if (ballNumber !== 0 || isShooting || !gameState.isMyTurn ) return
+        console.log("Game state on click:", gameState)
+        if (ballNumber !== 0 || isShooting || !gameState.isMyTurn) return
         controls.target.set(ref.current.translation().x, 4, ref.current.translation().z)
         camera.position.set(ref.current.translation().x,15,ref.current.translation().z)
         setIsShooting(true)
     }               
+    
     const normalizePointer = (pointer) => {
         const maxForce = 15
         const range = [-maxForce, maxForce];
@@ -35,23 +34,38 @@ const PoolBall = ({position, ballNumber, props}) => {
     }
 
     const handleSleep = () => {
-        
+        // Check if the ball is in the hole
+        const ballPosition = ref.current.translation()
+        if (ballPosition.y < 3.7) {
+            // Emit the ball in hole event
+            socket.emit('ballInHole', { ballNumber });
+            console.log(`Ball ${ballNumber} is in the hole`);
+        }
     }
 
-    
+    socket.on('playerShot', ({ force }) => {
+        if (ref.current && !isShooting) {
+            ref.current.applyImpulse({x: force.x, y: 0, z: force.z}, true)
+            controls.target.set(0, 4, 0)
+        }
+    }
+    )
     useEffect(() => {
         if (isShooting) {
             setForce(normalizePointer(pointer))
         }
+        
         const handleClick = () => {
             if (isShooting) {
-                ref.current.applyImpulse({x: force.x,y: 0,z: force.z}, true)
+                // Apply force to the ball
+                ref.current.applyImpulse({x: force.x, y: 0, z: force.z}, true)
                 controls.target.set(0, 4, 0)
                 setIsShooting(false)
                 if (controls) controls.enabled = true
                 
-                // Emit shot to other player
-                socket.emit('shot', { force: { x: force.x, y: 0, z: force.z } })
+                // Use the context's sendShot function instead of direct socket emit
+                // This ensures the local state is updated properly
+                sendShot({ x: force.x, y: 0, z: force.z })
             }
         }
     
@@ -61,7 +75,7 @@ const PoolBall = ({position, ballNumber, props}) => {
                 window.removeEventListener('click', handleClick)
             }
         }
-    }, [isShooting, ref, controls, force, socket])
+    }, [isShooting, ref, controls, force, sendShot])
 
   return (
     <>
@@ -73,18 +87,17 @@ const PoolBall = ({position, ballNumber, props}) => {
             restitution={0.95}
             canSleep={true}
             ref={ref}
-            colliders={ false }
-            onCollisionEnter={(e) => {if (e.other.rigidBody.userData.isHole && inHole === false) setInHole(true)}}
-            onSleep={() => handleSleep() }
+            colliders={false}
+            onSleep={() => handleSleep()}
             sensors={true}
             >
-            <BallCollider mass={1} args={[0.13, 32, 32]}/>
+            <BallCollider mass={1} args={[0.14, 32, 32]}/>
             <mesh castShadow onClick={e => {handleClick(e)}} >
-                <sphereGeometry args={[0.13, 32, 32]} />
+                <sphereGeometry args={[0.14, 32, 32]} />
                 <meshStandardMaterial map={texture} metalness={0.5}/>
             </mesh>
         </RigidBody>
-        {isShooting &&<ShootIndicator position={vec3(ref.current.translation())} forceVector={force} />}
+        {isShooting && <ShootIndicator position={vec3(ref.current.translation())} forceVector={force} />}
     </>
   )
 }
