@@ -237,7 +237,6 @@ const Experience = () => {
                 </Text>
             )}
 
-            <Perf />
             <Physics 
                 debug={false}
                 gravity={[0, -9.81, 0]} 

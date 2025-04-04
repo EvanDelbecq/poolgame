@@ -50,32 +50,84 @@ export const GameProvider = ({ children }) => {
   };
 
   useEffect(() => {
-    // Use explicit configuration options to ensure proper connection
-    const socket = io('http://localhost:3000', {
-      transports: ['websocket', 'polling'], // Try websocket first, fallback to polling
+    // For remote server connections
+    console.log("Attempting to connect to remote server...");
+    
+    // Add path and explicit HTTPS protocol
+    const socket = io('wss://scolavinci.fr', {
+      path: '/socket.io', // Make sure this matches your server's socket.io path
+      transports: ['polling', 'websocket'], // Try polling first, then WebSocket
+      secure: true, // Enable secure connection for HTTPS
       reconnection: true,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: 10,
       reconnectionDelay: 1000,
+      timeout: 20000, // Increase timeout for slower connections
     });
     
+    // Connection status tracking
+    let connectionStatus = 'connecting';
+  
     socket.on('connect', () => {
-      console.log('Connected to server with ID:', socket.id);
-      setGameState(prev => ({ ...prev, isConnected: true }))
-      
-      // Don't automatically join, wait for the name input
-      // Lobby handles joining now
-    });
-
-    socket.on('connect_error', (error) => {
-      console.error('Connection error:', error);
-      // Show error in UI
+            console.log('Connected to server with ID:', socket.id);
       setGameState(prev => ({ 
         ...prev, 
-        connectionError: `Failed to connect: ${error.message}` 
+        isConnected: true,
+        connectionError: null // Clear any previous error
       }));
     });
-
-    // Update for lobby system
+  
+    socket.on('connect_error', (error) => {
+      connectionStatus = 'error';
+      console.error('Connection error:', error);
+      setGameState(prev => ({ 
+        ...prev, 
+        connectionError: `Failed to connect to scolavinci.fr: ${error.message}. Using: ${socket.io.engine.transport.name}`
+      }));
+  
+      // Try to identify specific error
+      if (error.message.includes('xhr poll error')) {
+        console.log('XHR polling failed. Server might be down or CORS issues.');
+      } else if (error.message.includes('websocket error')) {
+        console.log('WebSocket error. Falling back to polling.');
+      }
+    });
+  
+    // Track transport changes
+    socket.io.on("transportError", (err, transport) => {
+      console.log(`Transport ${transport} error:`, err);
+    });
+  
+    socket.io.on("upgrade", (transport) => {
+      console.log(`Transport upgraded to: ${transport}`);
+    });
+  
+    // Try to reconnect with polling if WebSocket fails
+    socket.io.on("reconnect_attempt", (attempt) => {
+      console.log(`Reconnection attempt ${attempt}`);
+      
+      // Force polling on first reconnect attempt
+      if (attempt === 1) {
+        socket.io.opts.transports = ['polling'];
+      }
+      
+      // Try to add WebSocket back after a few polling attempts
+      if (attempt === 3) {
+        socket.io.opts.transports = ['polling', 'websocket'];
+      }
+    });
+  
+    // Add a timeout in case the connection takes too long
+    const connectionTimeout = setTimeout(() => {
+      if (connectionStatus === 'connecting') {
+        console.error('Connection timed out');
+        setGameState(prev => ({ 
+          ...prev, 
+          connectionError: 'Connection to scolavinci.fr timed out. Server might be down or blocked by firewall.' 
+        }));
+      }
+    }, 10000); // 10 seconds timeout
+  
+    // Rest of your socket handlers...
     socket.on('roomJoined', ({ room, players }) => {
       console.log('Room joined:', room, 'Players:', players);
       
@@ -221,9 +273,12 @@ export const GameProvider = ({ children }) => {
     setSocket(socket);
 
     return () => {
-      console.log('Disconnecting socket');
-      socket.disconnect();
-    }
+      clearTimeout(connectionTimeout);
+      if (socket) {
+        console.log('Disconnecting socket');
+        socket.disconnect();
+      }
+    };
   }, []);
 
   // Function to send a shot
