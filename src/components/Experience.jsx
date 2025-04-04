@@ -15,6 +15,15 @@ const Experience = () => {
     const { progress, loaded } = useProgress()
     const cueBallPosition = useRef([-4, 3.8, 0]) // Store original cue ball position
 
+    // If we're not in the playing phase, pause physics
+    useEffect(() => {
+        if (gameState.gamePhase !== 'playing') {
+            setPaused(true);
+        } else if (allLoaded) {
+            setPaused(false);
+        }
+    }, [gameState.gamePhase, allLoaded]);
+
     // Function to register ball references
     const registerBall = (ballNumber, ref) => {
         if (ref === null) {
@@ -70,29 +79,18 @@ const Experience = () => {
             // Add a small delay before starting physics to ensure everything is positioned correctly
             const timer = setTimeout(() => {
                 setAllLoaded(true);
-                setPaused(false);
-                console.log("Physics simulation started");
+                // Only unpause if we're in playing phase
+                if (gameState.gamePhase === 'playing') {
+                    setPaused(false);
+                    console.log("Physics simulation started");
+                } else {
+                    console.log("Assets loaded, waiting for game phase to change to playing");
+                }
             }, 500); // 500ms delay for safety
             
             return () => clearTimeout(timer);
         }
-    }, [progress, loaded, tableLoaded]);
-
-    // Handle game start - unpause physics when game starts
-    useEffect(() => {
-        if (socket && allLoaded) {
-            const handleGameStart = () => {
-                console.log("Game started, unpausing physics");
-                setPaused(false);
-            };
-            
-            socket.on('gameStart', handleGameStart);
-            
-            return () => {
-                socket.off('gameStart', handleGameStart);
-            };
-        }
-    }, [socket, allLoaded]);
+    }, [progress, loaded, tableLoaded, gameState.gamePhase]);
 
     // Listen for cue ball respawn events
     useEffect(() => {
@@ -131,7 +129,7 @@ const Experience = () => {
 
     // Send physics snapshots when authority
     useEffect(() => {
-        if (!socket || !isPhysicsAuthority || paused) return;
+        if (!socket || !isPhysicsAuthority || paused || gameState.gamePhase !== 'playing') return;
 
         const snapshotInterval = setInterval(() => {
             const snapshot = {};
@@ -188,7 +186,14 @@ const Experience = () => {
         }, 100);
 
         return () => clearInterval(snapshotInterval);
-    }, [socket, isPhysicsAuthority, gameState.ballsInHole, paused]);
+    }, [socket, isPhysicsAuthority, gameState.ballsInHole, paused, gameState.gamePhase]);
+
+    // If we're in lobby phase, don't render the full game experience
+    if (gameState.gamePhase === 'lobby') {
+        return (
+            <ambientLight intensity={0.5} />
+        );
+    }
 
     return (
         <>
@@ -205,12 +210,12 @@ const Experience = () => {
 
             {/* Game information UI */}
             <Text position={[-6, 8, 0]} fontSize={0.5} color="white">
-                {`Player 1: ${gameState.scores?.[0] || 0} points`}
+                {`${gameState.players[0]?.name || 'Player 1'}: ${gameState.scores?.[0] || 0} points`}
                 {gameState.playerTypes?.[0] ? ` (${gameState.playerTypes[0]})` : ''}
             </Text>
 
             <Text position={[6, 8, 0]} fontSize={0.5} color="white">
-                {`Player 2: ${gameState.scores?.[1] || 0} points`}
+                {`${gameState.players[1]?.name || 'Player 2'}: ${gameState.scores?.[1] || 0} points`}
                 {gameState.playerTypes?.[1] ? ` (${gameState.playerTypes[1]})` : ''}
             </Text>
 

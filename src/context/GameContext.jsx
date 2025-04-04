@@ -9,12 +9,15 @@ export const GameProvider = ({ children }) => {
     isConnected: false,
     currentRoom: null,
     players: [],
+    myPlayer: null,
     isMyTurn: false,
-    myIndex: null, // Add player index tracking
-    scores: [0, 0], // [player1Score, player2Score]
-    playerTypes: [null, null], // [player1Type, player2Type] - 'solid' or 'striped'
-    ballsInHole: [], // Track which balls are in holes
-    gameWinner: null // Who won the game
+    myIndex: null,
+    scores: [0, 0],
+    playerTypes: [null, null],
+    ballsInHole: [],
+    gameWinner: null,
+    gamePhase: 'lobby', // 'lobby', 'playing', 'gameOver'
+    allPlayersReady: false
   })
   const [isPhysicsAuthority, setIsPhysicsAuthority] = useState(false);
   
@@ -23,7 +26,11 @@ export const GameProvider = ({ children }) => {
   
   // Function to register a ball update callback
   const registerBallUpdateCallback = (ballNumber, callback) => {
-    ballUpdateCallbacksRef.current[ballNumber] = callback;
+    if (callback === null) {
+      delete ballUpdateCallbacksRef.current[ballNumber];
+    } else {
+      ballUpdateCallbacksRef.current[ballNumber] = callback;
+    }
   };
   
   // Function that will be used to update ball positions from snapshots
@@ -32,14 +39,19 @@ export const GameProvider = ({ children }) => {
     Object.entries(snapshot).forEach(([ballNumber, ballData]) => {
       const callback = ballUpdateCallbacksRef.current[ballNumber];
       if (callback && typeof callback === 'function') {
-        callback(ballData);
+        try {
+          callback(ballData);
+        } catch (error) {
+          console.error(`Error updating ball ${ballNumber}:`, error);
+          delete ballUpdateCallbacksRef.current[ballNumber];
+        }
       }
     });
   };
 
   useEffect(() => {
     // Use explicit configuration options to ensure proper connection
-    const socket = io('https://scolavinci.fr', {
+    const socket = io('http://localhost:3000', {
       transports: ['websocket', 'polling'], // Try websocket first, fallback to polling
       reconnection: true,
       reconnectionAttempts: 5,
@@ -50,16 +62,57 @@ export const GameProvider = ({ children }) => {
       console.log('Connected to server with ID:', socket.id);
       setGameState(prev => ({ ...prev, isConnected: true }))
       
-      // Delay the join event slightly to ensure connection is stable
-      setTimeout(() => {
-        const playerName = `Player_${socket.id.slice(0, 5)}`;
-        console.log('Emitting joinGame event with name:', playerName);
-        socket.emit('joinGame', playerName);
-      }, 500);
+      // Don't automatically join, wait for the name input
+      // Lobby handles joining now
     });
 
     socket.on('connect_error', (error) => {
       console.error('Connection error:', error);
+      // Show error in UI
+      setGameState(prev => ({ 
+        ...prev, 
+        connectionError: `Failed to connect: ${error.message}` 
+      }));
+    });
+
+    // Update for lobby system
+    socket.on('roomJoined', ({ room, players }) => {
+      console.log('Room joined:', room, 'Players:', players);
+      
+      // Find myself in players list
+      const myPlayer = players.find(p => p.id === socket.id);
+      
+      setGameState(prev => ({
+        ...prev,
+        currentRoom: room,
+        players,
+        myPlayer
+      }));
+    });
+
+    socket.on('playerJoined', ({ players }) => {
+      console.log('Player joined, updated players:', players);
+      setGameState(prev => ({
+        ...prev,
+        players
+      }));
+    });
+
+    socket.on('playerLeft', ({ players }) => {
+      console.log('Player left, updated players:', players);
+      setGameState(prev => ({
+        ...prev,
+        players
+      }));
+    });
+
+    socket.on('playerReadyUpdate', ({ players, allReady }) => {
+      console.log('Player ready status updated:', players);
+      setGameState(prev => ({
+        ...prev,
+        players,
+        allPlayersReady: allReady
+      }));
     });
 
     socket.on('gameStart', ({ players }) => {
@@ -74,15 +127,15 @@ export const GameProvider = ({ children }) => {
         players,
         currentRoom: players[0].room,
         myIndex: currentPlayerIndex,
-        // First player's turn when game starts
-        isMyTurn: currentPlayerIndex === 0
+        isMyTurn: currentPlayerIndex === 0,
+        gamePhase: 'playing'
       }));
       
       console.log(`Setting initial turn: ${currentPlayerIndex === 0}`);
       
       // If it's my turn, I'm the physics authority
       setIsPhysicsAuthority(currentPlayerIndex === 0);
-    })
+    });
 
     socket.on('playerShot', ({ playerId, force }) => {
       console.log('Player shot received:', playerId, force);
@@ -102,7 +155,7 @@ export const GameProvider = ({ children }) => {
       } else {
         setIsPhysicsAuthority(false);
       }
-    })
+    });
     
     // Handle score updates
     socket.on('scoreUpdate', ({ scores, playerTypes, ballsInHole }) => {
@@ -122,15 +175,20 @@ export const GameProvider = ({ children }) => {
         ...prev,
         gameWinner: winner,
         scores: finalScores,
-        isMyTurn: false // Game is over, no more turns
+        isMyTurn: false,
+        gamePhase: 'gameOver'
       }));
     });
 
     // Add new event for physics update
     socket.on('physicsSnapshot', (snapshot) => {
       if (!isPhysicsAuthority) {
-        // Apply the snapshot to all balls
-        updateBallPositions(snapshot);
+        try {
+          // Apply the snapshot to all balls
+          updateBallPositions(snapshot);
+        } catch (error) {
+          console.error("Error applying physics snapshot:", error);
+        }
       }
     });
 
@@ -160,13 +218,13 @@ export const GameProvider = ({ children }) => {
     });
 
     // Store socket in state for later use
-    setSocket(socket)
+    setSocket(socket);
 
     return () => {
       console.log('Disconnecting socket');
       socket.disconnect();
     }
-  }, [])
+  }, []);
 
   // Function to send a shot
   const sendShot = (force) => {
@@ -191,13 +249,29 @@ export const GameProvider = ({ children }) => {
     }
   };
 
+  // Function to reset game for rematch
+  const resetGame = () => {
+    if (socket && gameState.gamePhase === 'gameOver') {
+      socket.emit('requestRematch');
+      setGameState(prev => ({
+        ...prev,
+        gamePhase: 'lobby',
+        gameWinner: null,
+        scores: [0, 0],
+        playerTypes: [null, null],
+        ballsInHole: []
+      }));
+    }
+  };
+
   return (
     <GameContext.Provider value={{ 
       gameState, 
       socket,
-      sendShot, // Expose the sendShot function
+      sendShot,
       isPhysicsAuthority,
-      registerBallUpdateCallback
+      registerBallUpdateCallback,
+      resetGame
     }}>
       {children}
     </GameContext.Provider>
