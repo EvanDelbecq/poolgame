@@ -6,10 +6,22 @@ Command: npx gltfjsx@6.5.3 public/pooltable.glb
 import React from 'react'
 import { useGLTF } from '@react-three/drei'
 import { RigidBody } from '@react-three/rapier'
+import { useEffect } from 'react'
 
 
-export default function Model(props) {
+
+export default function Pooltable(props) {
   const { nodes, materials } = useGLTF('/pooltable.glb')
+
+  useEffect(() => {
+  if (props.onLoaded && typeof props.onLoaded === 'function') {
+    // Wait a bit before reporting loaded to make sure material and geometry are ready
+    const timer = setTimeout(() => {
+      props.onLoaded();
+    }, 200);
+    return () => clearTimeout(timer);
+  }
+}, [props.onLoaded]);
   return (
     <group {...props} dispose={null}>
       <group rotation={[Math.PI / 2, 0, 0]} scale={0.05}>

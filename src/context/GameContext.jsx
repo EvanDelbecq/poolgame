@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState, useRef } from 'react'
 import { io } from 'socket.io-client'
 
 const GameContext = createContext()
@@ -10,18 +10,40 @@ export const GameProvider = ({ children }) => {
     currentRoom: null,
     players: [],
     isMyTurn: false,
-    myIndex: null // Add player index tracking
+    myIndex: null, // Add player index tracking
+    scores: [0, 0], // [player1Score, player2Score]
+    playerTypes: [null, null], // [player1Type, player2Type] - 'solid' or 'striped'
+    ballsInHole: [], // Track which balls are in holes
+    gameWinner: null // Who won the game
   })
+  const [isPhysicsAuthority, setIsPhysicsAuthority] = useState(false);
+  
+  // Create a ref to store callbacks for ball position updates
+  const ballUpdateCallbacksRef = useRef({});
+  
+  // Function to register a ball update callback
+  const registerBallUpdateCallback = (ballNumber, callback) => {
+    ballUpdateCallbacksRef.current[ballNumber] = callback;
+  };
+  
+  // Function that will be used to update ball positions from snapshots
+  const updateBallPositions = (snapshot) => {
+    // Apply the snapshot to all registered balls
+    Object.entries(snapshot).forEach(([ballNumber, ballData]) => {
+      const callback = ballUpdateCallbacksRef.current[ballNumber];
+      if (callback && typeof callback === 'function') {
+        callback(ballData);
+      }
+    });
+  };
 
   useEffect(() => {
     // Use explicit configuration options to ensure proper connection
-    const socket = io('http://20.19.81.107:3000', {
+    const socket = io('https://scolavinci.fr', {
       transports: ['websocket', 'polling'], // Try websocket first, fallback to polling
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
-      // pingInterval: 1000,
-      // pingTimeout: 3000,
     });
     
     socket.on('connect', () => {
@@ -57,6 +79,9 @@ export const GameProvider = ({ children }) => {
       }));
       
       console.log(`Setting initial turn: ${currentPlayerIndex === 0}`);
+      
+      // If it's my turn, I'm the physics authority
+      setIsPhysicsAuthority(currentPlayerIndex === 0);
     })
 
     socket.on('playerShot', ({ playerId, force }) => {
@@ -70,7 +95,69 @@ export const GameProvider = ({ children }) => {
           isMyTurn: newIsMyTurn
         };
       });
+      
+      // If it's now my turn, I become physics authority
+      if (playerId !== socket.id) {
+        setIsPhysicsAuthority(true);
+      } else {
+        setIsPhysicsAuthority(false);
+      }
     })
+    
+    // Handle score updates
+    socket.on('scoreUpdate', ({ scores, playerTypes, ballsInHole }) => {
+      console.log('Score update received:', scores, playerTypes, ballsInHole);
+      setGameState(prev => ({
+        ...prev,
+        scores,
+        playerTypes,
+        ballsInHole
+      }));
+    });
+    
+    // Handle game over
+    socket.on('gameOver', ({ winner, finalScores }) => {
+      console.log('Game over! Winner:', winner, 'Final scores:', finalScores);
+      setGameState(prev => ({
+        ...prev,
+        gameWinner: winner,
+        scores: finalScores,
+        isMyTurn: false // Game is over, no more turns
+      }));
+    });
+
+    // Add new event for physics update
+    socket.on('physicsSnapshot', (snapshot) => {
+      if (!isPhysicsAuthority) {
+        // Apply the snapshot to all balls
+        updateBallPositions(snapshot);
+      }
+    });
+
+    // Add new event for ball in hole
+    socket.on('ballInHole', ({ ballNumber, ballsInHole }) => {
+      console.log(`Ball ${ballNumber} is now in a hole`);
+      setGameState(prev => ({
+        ...prev,
+        ballsInHole
+      }));
+      
+      // If this is the cue ball, wait for the respawn event
+      if (ballNumber === 0) {
+        console.log("Cue ball fell in a hole, waiting for respawn");
+      }
+    });
+
+    // Add new event for cue ball respawn
+    socket.on('respawnCueBall', () => {
+      console.log("Respawning cue ball");
+      
+      // Update state to remove cue ball from holes list
+      setGameState(prev => ({
+        ...prev,
+        ballsInHole: prev.ballsInHole.filter(ball => ball !== 0)
+      }));
+    });
 
     // Store socket in state for later use
     setSocket(socket)
@@ -108,7 +195,9 @@ export const GameProvider = ({ children }) => {
     <GameContext.Provider value={{ 
       gameState, 
       socket,
-      sendShot // Expose the sendShot function
+      sendShot, // Expose the sendShot function
+      isPhysicsAuthority,
+      registerBallUpdateCallback
     }}>
       {children}
     </GameContext.Provider>
