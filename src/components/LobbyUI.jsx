@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useGame } from '../context/GameContext';
-import './LobbyUI.css'; // Regular CSS import
 
 const LobbyUI = ({ onStartGame }) => {
   const { gameState, socket } = useGame();
