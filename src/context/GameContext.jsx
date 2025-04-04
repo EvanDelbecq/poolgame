@@ -51,7 +51,7 @@ export const GameProvider = ({ children }) => {
 
   useEffect(() => {
     // Use explicit configuration options to ensure proper connection
-    const socket = io('https://localhost:3000', {
+    const socket = io('http://localhost:3000', {
       transports: ['websocket', 'polling'], // Try websocket first, fallback to polling
       reconnection: true,
       reconnectionAttempts: 5,
