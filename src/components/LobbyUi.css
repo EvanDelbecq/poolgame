@@ -1,0 +1,223 @@
+.lobby-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.8);
+  z-index: 100;
+  color: white;
+  font-family: Arial, sans-serif;
+}
+
+.lobby-card {
+  background: #111;
+  border-radius: 8px;
+  padding: 2rem;
+  width: 90%;
+  max-width: 500px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+}
+
+.lobby-card h2 {
+  text-align: center;
+  margin-bottom: 1.5rem;
+  color: #6ee7b7;
+}
+
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+  color: #d1d5db;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 0.75rem;
+  border-radius: 4px;
+  border: 1px solid #374151;
+  background: #1f2937;
+  color: white;
+  font-size: 1rem;
+}
+
+.submit-button {
+  width: 100%;
+  padding: 0.75rem;
+  border-radius: 4px;
+  border: none;
+  background: #10b981;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  margin-top: 1rem;
+}
+
+.submit-button:hover {
+  background: #059669;
+}
+
+.error {
+  color: #ef4444;
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+}
+
+.players-container {
+  margin-bottom: 1.5rem;
+}
+
+.players-container h3 {
+  margin-bottom: 0.75rem;
+  color: #d1d5db;
+}
+
+.players-list {
+  background: #1f2937;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.player-item {
+  padding: 0.75rem 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #374151;
+}
+
+.player-item:last-child {
+  border-bottom: none;
+}
+
+.player-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.player-name {
+  font-weight: 600;
+}
+
+.you-tag {
+  font-size: 0.8rem;
+  color: #9ca3af;
+}
+
+.ready-badge {
+  background: #10b981;
+  color: white;
+  font-size: 0.8rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 9999px;
+}
+
+.not-ready-badge {
+  background: #6b7280;
+  color: white;
+  font-size: 0.8rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 9999px;
+}
+
+.waiting-message {
+  padding: 1rem;
+  text-align: center;
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.invite-link-container {
+  margin-bottom: 1.5rem;
+}
+
+.invite-link-container h3 {
+  margin-bottom: 0.75rem;
+  color: #d1d5db;
+}
+
+.invite-link {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.invite-link input {
+  flex: 1;
+  padding: 0.75rem;
+  border-radius: 4px;
+  border: 1px solid #374151;
+  background: #1f2937;
+  color: white;
+  font-size: 0.9rem;
+}
+
+.copy-button {
+  padding: 0 1rem;
+  background: #4b5563;
+  border: none;
+  border-radius: 4px;
+  color: white;
+  cursor: pointer;
+}
+
+.copy-button:hover {
+  background: #6b7280;
+}
+
+.actions {
+  display: flex;
+  justify-content: center;
+}
+
+.ready-button {
+  padding: 0.75rem 2rem;
+  border-radius: 4px;
+  border: none;
+  background: #10b981;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.ready-button:hover {
+  background: #059669;
+}
+
+.not-ready-button {
+  padding: 0.75rem 2rem;
+  border-radius: 4px;
+  border: none;
+  background: #ef4444;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.not-ready-button:hover {
+  background: #dc2626;
+}
+
+.starting-message {
+  margin-top: 1.5rem;
+  text-align: center;
+  color: #6ee7b7;
+  font-weight: 600;
+}
+
+.joining-text {
+  text-align: center;
+  color: #d1d5db;
+  margin-bottom: 1rem;
+}
