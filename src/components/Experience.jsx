@@ -7,13 +7,17 @@ import { useGame } from '../context/GameContext'
 import { useState, useEffect, useRef } from 'react'
 
 const Experience = () => {
-    const { gameState, socket, isPhysicsAuthority } = useGame()
+    const { gameState, socket, isPhysicsAuthority, registerBallUpdateCallback } = useGame()
     const [paused, setPaused] = useState(true) // Start with physics paused
     const [allLoaded, setAllLoaded] = useState(false) // Track loading state
     const [tableLoaded, setTableLoaded] = useState(false)
     const ballRefs = useRef({});
     const { progress, loaded } = useProgress()
     const cueBallPosition = useRef([-4, 3.8, 0]) // Store original cue ball position
+    const lastSyncTime = useRef(0);
+    const lastPhysicsSnapshot = useRef({});
+    const physicsOutOfSyncCounter = useRef(0);
+    const syncThreshold = 0.5; // Distance threshold for considering physics out of sync (in world units)
 
     // If we're not in the playing phase, pause physics
     useEffect(() => {
@@ -31,6 +35,116 @@ const Experience = () => {
             delete ballRefs.current[ballNumber];
         } else {
             ballRefs.current[ballNumber] = ref;
+            
+            // Register this ball with the game context for physics updates
+            registerBallUpdateCallback(ballNumber, (ballData) => {
+                if (!ref.current || !ballData) return;
+                
+                try {
+                    // Get current position and velocity
+                    const currentPos = ref.current.translation();
+                    const currentVel = ref.current.linvel();
+                    
+                    // Calculate distance between current and incoming position
+                    const distanceSquared = 
+                        Math.pow(currentPos.x - ballData.position.x, 2) +
+                        Math.pow(currentPos.z - ballData.position.z, 2);
+                    
+                    // Calculate speed
+                    const currentSpeed = Math.sqrt(
+                        currentVel.x * currentVel.x + 
+                        currentVel.z * currentVel.z
+                    );
+                    
+                    const incomingSpeed = Math.sqrt(
+                        ballData.velocity.x * ballData.velocity.x + 
+                        ballData.velocity.z * ballData.velocity.z
+                    );
+                    
+                    // Get elapsed time since last update (for interpolation)
+                    const now = performance.now();
+                    const elapsed = now - lastSyncTime.current;
+                    lastSyncTime.current = now;
+                    
+                    // Apply different sync strategies based on conditions
+                    
+                    // Strategy 1: If ball is nearly stationary, snap to exact position
+                    if (incomingSpeed < 0.05) {
+                        ref.current.setTranslation({
+                            x: ballData.position.x,
+                            y: ballData.position.y, 
+                            z: ballData.position.z
+                        });
+                        ref.current.setLinvel({
+                            x: 0, y: 0, z: 0
+                        });
+                        ref.current.setAngvel({
+                            x: 0, y: 0, z: 0
+                        });
+                        return;
+                    }
+                    
+                    // Strategy 2: If distance is large, snap to position but keep momentum
+                    if (distanceSquared > syncThreshold * syncThreshold) {
+                        // If we detect significant desync, increment counter
+                        physicsOutOfSyncCounter.current++;
+                        
+                        // Hard correction needed
+                        ref.current.setTranslation({
+                            x: ballData.position.x,
+                            y: ballData.position.y, 
+                            z: ballData.position.z
+                        });
+                        
+                        // Apply incoming velocity
+                        ref.current.setLinvel({
+                            x: ballData.velocity.x,
+                            y: ballData.velocity.y,
+                            z: ballData.velocity.z
+                        });
+                        
+                        // If we've detected desync many times in a row, log warning
+                        if (physicsOutOfSyncCounter.current > 10) {
+                            console.warn(`Ball ${ballNumber} is consistently out of sync`);
+                            physicsOutOfSyncCounter.current = 0;
+                        }
+                    } 
+                    // Strategy 3: Small correction with interpolation
+                    else {
+                        physicsOutOfSyncCounter.current = 0;
+                        
+                        // Calculate interpolation factor - how strongly to correct (0.1 to 0.5)
+                        // Faster balls need stronger correction
+                        const correctionFactor = Math.min(0.1 + (incomingSpeed * 0.1), 0.5);
+                        
+                        // Smoothly interpolate position
+                        const newX = currentPos.x + (ballData.position.x - currentPos.x) * correctionFactor;
+                        const newZ = currentPos.z + (ballData.position.z - currentPos.z) * correctionFactor;
+                        
+                        // Apply interpolated position
+                        ref.current.setTranslation({
+                            x: newX,
+                            y: ballData.position.y, // Y is less important for pool, take direct value
+                            z: newZ
+                        });
+                        
+                        // Blend velocities (stronger on velocity than position)
+                        const blendFactor = Math.min(0.3 + (incomingSpeed * 0.1), 0.7);
+                        
+                        ref.current.setLinvel({
+                            x: currentVel.x + (ballData.velocity.x - currentVel.x) * blendFactor,
+                            y: ballData.velocity.y, // Direct Y velocity
+                            z: currentVel.z + (ballData.velocity.z - currentVel.z) * blendFactor
+                        });
+                    }
+                    
+                    // Store last snapshot for this ball
+                    lastPhysicsSnapshot.current[ballNumber] = ballData;
+                    
+                } catch (error) {
+                    console.error(`Error applying physics update to ball ${ballNumber}:`, error);
+                }
+            });
         }
     };
 
@@ -83,6 +197,12 @@ const Experience = () => {
                 if (gameState.gamePhase === 'playing') {
                     setPaused(false);
                     console.log("Physics simulation started");
+                    
+                    // Request full physics state if we're not the authority
+                    if (!isPhysicsAuthority && socket) {
+                        console.log("Requesting full physics state");
+                        socket.emit('requestFullState');
+                    }
                 } else {
                     console.log("Assets loaded, waiting for game phase to change to playing");
                 }
@@ -90,7 +210,7 @@ const Experience = () => {
             
             return () => clearTimeout(timer);
         }
-    }, [progress, loaded, tableLoaded, gameState.gamePhase]);
+    }, [progress, loaded, tableLoaded, gameState.gamePhase, isPhysicsAuthority, socket]);
 
     // Listen for cue ball respawn events
     useEffect(() => {
@@ -120,20 +240,53 @@ const Experience = () => {
             }, 100);
         };
         
+        // Request and handle full game state for accurate synchronization
+        const handleFullState = (fullState) => {
+            console.log("Received full physics state", fullState);
+            
+            // Apply the state to all balls with precise positioning
+            Object.entries(fullState).forEach(([ballNumber, ballData]) => {
+                const ballRef = ballRefs.current[ballNumber];
+                if (ballRef && ballRef.current) {
+                    // Directly set position and velocity
+                    ballRef.current.setTranslation({
+                        x: ballData.position.x,
+                        y: ballData.position.y,
+                        z: ballData.position.z
+                    });
+                    
+                    ballRef.current.setLinvel({
+                        x: ballData.velocity.x,
+                        y: ballData.velocity.y,
+                        z: ballData.velocity.z
+                    });
+                    
+                    // Also store this as the last known good state
+                    lastPhysicsSnapshot.current[ballNumber] = ballData;
+                }
+            });
+        };
+        
         socket.on('respawnCueBall', handleCueBallRespawn);
+        socket.on('fullState', handleFullState);
         
         return () => {
             socket.off('respawnCueBall', handleCueBallRespawn);
+            socket.off('fullState', handleFullState);
         };
     }, [socket, gameState]);
 
-    // Send physics snapshots when authority
+    // Send physics snapshots when authority with improved frequency and accuracy
     useEffect(() => {
         if (!socket || !isPhysicsAuthority || paused || gameState.gamePhase !== 'playing') return;
 
+        // Track if any ball is moving at high speed for adaptive sync rate
+        const adaptiveRateRef = useRef(100); // Default 100ms between updates
+        
         const snapshotInterval = setInterval(() => {
             const snapshot = {};
             let hasMovingBalls = false;
+            let maxSpeed = 0;
 
             try {
                 // Safe way to collect positions of all balls
@@ -146,29 +299,45 @@ const Experience = () => {
                     try {
                         const pos = ref.current.translation();
                         const vel = ref.current.linvel();
+                        const ang = ref.current.angvel(); // Include angular velocity
                         
-                        // Only include balls that are actually moving
+                        // Calculate speed
                         const speed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
+                        maxSpeed = Math.max(maxSpeed, speed);
                         
-                        // Round values to reduce network traffic
+                        // Round values to reduce network traffic but maintain precision
+                        // For slow balls: less precision, fast balls: more precision
+                        const precision = speed > 1 ? 1000 : 100;
+                        
                         const roundedPos = {
-                            x: Math.round(pos.x * 100) / 100,
-                            y: Math.round(pos.y * 100) / 100,
-                            z: Math.round(pos.z * 100) / 100
+                            x: Math.round(pos.x * precision) / precision,
+                            y: Math.round(pos.y * precision) / precision,
+                            z: Math.round(pos.z * precision) / precision
                         };
                         
                         const roundedVel = {
-                            x: Math.round(vel.x * 100) / 100,
-                            y: Math.round(vel.y * 100) / 100,
-                            z: Math.round(vel.z * 100) / 100
+                            x: Math.round(vel.x * precision) / precision,
+                            y: Math.round(vel.y * precision) / precision,
+                            z: Math.round(vel.z * precision) / precision
+                        };
+                        
+                        // Include angular velocity for better physics replication
+                        const roundedAng = {
+                            x: Math.round(ang.x * 10) / 10,
+                            y: Math.round(ang.y * 10) / 10,
+                            z: Math.round(ang.z * 10) / 10
                         };
                         
                         snapshot[ballNumber] = {
                             position: roundedPos,
-                            velocity: roundedVel
+                            velocity: roundedVel,
+                            angularVelocity: roundedAng,
+                            speed
                         };
                         
-                        if (speed > 0.01) hasMovingBalls = true;
+                        // Check if this ball is moving enough to send updates
+                        if (speed > 0.005) hasMovingBalls = true;
+                        
                     } catch (error) {
                         console.log(`Error accessing ball ${ballNumber}:`, error);
                         // Clean up invalid refs
@@ -176,14 +345,38 @@ const Experience = () => {
                     }
                 });
 
-                // Only send snapshot if balls are moving
-                if (hasMovingBalls && Object.keys(snapshot).length > 0) {
-                    socket.emit('physicsSnapshot', snapshot);
+                // Adaptive update rate based on maximum ball speed
+                if (maxSpeed > 3) {
+                    adaptiveRateRef.current = 40; // Fast updates for fast balls
+                } else if (maxSpeed > 1) {
+                    adaptiveRateRef.current = 60; // Medium speed
+                } else {
+                    adaptiveRateRef.current = 100; // Slow updates for slow/stopped balls
                 }
+
+                // Only send snapshot if balls are moving or it's a full sync request
+                if (hasMovingBalls && Object.keys(snapshot).length > 0) {
+                    socket.emit('physicsSnapshot', {
+                        snapshot,
+                        timestamp: Date.now()
+                    });
+                }
+                
+                // Periodically send full state even if balls aren't moving much
+                // This helps maintain synchronization
+                const now = Date.now();
+                if (now - lastSyncTime.current > 2000) { // Every 2 seconds
+                    lastSyncTime.current = now;
+                    // Only send if we have ball data and we're still the authority
+                    if (Object.keys(snapshot).length > 0 && isPhysicsAuthority) {
+                        socket.emit('fullState', snapshot);
+                    }
+                }
+                
             } catch (error) {
                 console.error("Error in physics sync:", error);
             }
-        }, 100);
+        }, adaptiveRateRef.current); // Will adapt between updates
 
         return () => clearInterval(snapshotInterval);
     }, [socket, isPhysicsAuthority, gameState.ballsInHole, paused, gameState.gamePhase]);
