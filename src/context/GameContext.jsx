@@ -233,17 +233,14 @@ export const GameProvider = ({ children }) => {
     });
 
     // Add new event for physics update
-    socket.on('physicsSnapshot', (data) => {
-      if (isPhysicsAuthority) return; // Authority doesn't apply received snapshots
-  
-      const { snapshot, serverTimestamp, ping } = data;
-      
-      if (snapshot) {
-        // Apply the snapshot with the improved mechanism
-        updateBallPositions(snapshot, {
-          timestamp: serverTimestamp,
-          ping: ping || 0
-        });
+    socket.on('physicsSnapshot', (snapshot) => {
+      if (!isPhysicsAuthority) {
+        try {
+          // Apply the snapshot to all balls
+          updateBallPositions(snapshot);
+        } catch (error) {
+          console.error("Error applying physics snapshot:", error);
+        }
       }
     });
 
@@ -271,55 +268,6 @@ export const GameProvider = ({ children }) => {
         ballsInHole: prev.ballsInHole.filter(ball => ball !== 0)
       }));
     });
-
-    // Add or update these socket handlers in your useEffect where you set up socket listeners
-
-    // Handle request for full physics state
-    socket.on('requestFullState', ({ requesterId }) => {
-      if (isPhysicsAuthority) {
-        // Generate a complete snapshot of all balls
-        const fullStateSnapshot = {};
-        
-        try {
-          // This assumes you have access to ballRefs via ref
-          Object.entries(ballUpdateCallbacksRef.current).forEach(([ballNumber, callback]) => {
-            // Use a custom function to get current state of each ball
-            // This would need to be implemented based on your architecture
-            const ballState = getBallState(ballNumber);
-            if (ballState) {
-              fullStateSnapshot[ballNumber] = ballState;
-            }
-          });
-          
-          // If this is a direct request from one client, send directly to them
-          if (requesterId) {
-            socket.emit('fullState', fullStateSnapshot);
-          } 
-          // Otherwise broadcast to everyone
-          else {
-            socket.emit('fullState', fullStateSnapshot);  
-          }
-        } catch (error) {
-          console.error("Error generating full physics state:", error);
-        }
-      }
-    });
-
-    // Helper function to get ball state - this would need to be implemented
-    // based on how you access ball state in your application
-    const getBallState = (ballNumber) => {
-      // This is a placeholder - you need to implement how to get ball state
-      // from your physics engine or component refs
-      const ballCallback = ballUpdateCallbacksRef.current[ballNumber];
-      
-      // This assumes your callback can return the current state
-      // You'll need to adapt this to your actual implementation
-      if (typeof ballCallback === 'function' && ballCallback.getBallState) {
-        return ballCallback.getBallState();
-      }
-      
-      return null;
-    };
 
     // Store socket in state for later use
     setSocket(socket);
