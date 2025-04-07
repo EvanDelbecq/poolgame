@@ -17,6 +17,7 @@ const Experience = () => {
     const lastSyncTime = useRef(0);
     const lastPhysicsSnapshot = useRef({});
     const physicsOutOfSyncCounter = useRef(0);
+    const adaptiveRateRef = useRef(100); // MOVED THIS TO THE TOP LEVEL
     const syncThreshold = 0.5; // Distance threshold for considering physics out of sync (in world units)
 
     // If we're not in the playing phase, pause physics
@@ -56,10 +57,10 @@ const Experience = () => {
                         currentVel.z * currentVel.z
                     );
                     
-                    const incomingSpeed = Math.sqrt(
+                    const incomingSpeed = ballData.velocity ? Math.sqrt(
                         ballData.velocity.x * ballData.velocity.x + 
                         ballData.velocity.z * ballData.velocity.z
-                    );
+                    ) : 0;
                     
                     // Get elapsed time since last update (for interpolation)
                     const now = performance.now();
@@ -96,12 +97,14 @@ const Experience = () => {
                             z: ballData.position.z
                         });
                         
-                        // Apply incoming velocity
-                        ref.current.setLinvel({
-                            x: ballData.velocity.x,
-                            y: ballData.velocity.y,
-                            z: ballData.velocity.z
-                        });
+                        // Check if velocity exists before applying
+                        if (ballData.velocity) {
+                            ref.current.setLinvel({
+                                x: ballData.velocity.x,
+                                y: ballData.velocity.y,
+                                z: ballData.velocity.z
+                            });
+                        }
                         
                         // If we've detected desync many times in a row, log warning
                         if (physicsOutOfSyncCounter.current > 10) {
@@ -128,14 +131,17 @@ const Experience = () => {
                             z: newZ
                         });
                         
-                        // Blend velocities (stronger on velocity than position)
-                        const blendFactor = Math.min(0.3 + (incomingSpeed * 0.1), 0.7);
-                        
-                        ref.current.setLinvel({
-                            x: currentVel.x + (ballData.velocity.x - currentVel.x) * blendFactor,
-                            y: ballData.velocity.y, // Direct Y velocity
-                            z: currentVel.z + (ballData.velocity.z - currentVel.z) * blendFactor
-                        });
+                        // Check if velocity exists before applying
+                        if (ballData.velocity) {
+                            // Blend velocities (stronger on velocity than position)
+                            const blendFactor = Math.min(0.3 + (incomingSpeed * 0.1), 0.7);
+                            
+                            ref.current.setLinvel({
+                                x: currentVel.x + (ballData.velocity.x - currentVel.x) * blendFactor,
+                                y: ballData.velocity.y, // Direct Y velocity
+                                z: currentVel.z + (ballData.velocity.z - currentVel.z) * blendFactor
+                            });
+                        }
                     }
                     
                     // Store last snapshot for this ball
@@ -220,10 +226,13 @@ const Experience = () => {
             console.log("Respawning cue ball");
             
             // Remove cue ball from the holes list
-            const newBallsInHole = gameState.ballsInHole.filter(ball => ball !== 0);
+            const newBallsInHole = gameState.ballsInHole ? 
+                gameState.ballsInHole.filter(ball => ball !== 0) : [];
             
             // Update local state to reflect cue ball is no longer in a hole
-            gameState.ballsInHole = newBallsInHole;
+            if (gameState.ballsInHole) {
+                gameState.ballsInHole = newBallsInHole;
+            }
             
             // If we have a reference to the cue ball, reset its position and velocity
             setTimeout(() => {
@@ -247,7 +256,7 @@ const Experience = () => {
             // Apply the state to all balls with precise positioning
             Object.entries(fullState).forEach(([ballNumber, ballData]) => {
                 const ballRef = ballRefs.current[ballNumber];
-                if (ballRef && ballRef.current) {
+                if (ballRef && ballRef.current && ballData && ballData.position) {
                     // Directly set position and velocity
                     ballRef.current.setTranslation({
                         x: ballData.position.x,
@@ -255,11 +264,14 @@ const Experience = () => {
                         z: ballData.position.z
                     });
                     
-                    ballRef.current.setLinvel({
-                        x: ballData.velocity.x,
-                        y: ballData.velocity.y,
-                        z: ballData.velocity.z
-                    });
+                    // Check if velocity exists before applying
+                    if (ballData.velocity) {
+                        ballRef.current.setLinvel({
+                            x: ballData.velocity.x,
+                            y: ballData.velocity.y,
+                            z: ballData.velocity.z
+                        });
+                    }
                     
                     // Also store this as the last known good state
                     lastPhysicsSnapshot.current[ballNumber] = ballData;
@@ -280,8 +292,7 @@ const Experience = () => {
     useEffect(() => {
         if (!socket || !isPhysicsAuthority || paused || gameState.gamePhase !== 'playing') return;
 
-        // Track if any ball is moving at high speed for adaptive sync rate
-        const adaptiveRateRef = useRef(100); // Default 100ms between updates
+        // Don't define adaptiveRateRef here - it's now defined at the component top level
         
         const snapshotInterval = setInterval(() => {
             const snapshot = {};
@@ -292,7 +303,9 @@ const Experience = () => {
                 // Safe way to collect positions of all balls
                 Object.entries(ballRefs.current).forEach(([ballNumber, ref]) => {
                     // Skip if ref or ref.current is null or if ball is in a hole
-                    if (!ref || !ref.current || gameState.ballsInHole?.includes(parseInt(ballNumber, 10))) {
+                    if (!ref || !ref.current || 
+                        (gameState.ballsInHole && 
+                         gameState.ballsInHole.includes(parseInt(ballNumber, 10)))) {
                         return;
                     }
                     
@@ -376,10 +389,10 @@ const Experience = () => {
             } catch (error) {
                 console.error("Error in physics sync:", error);
             }
-        }, adaptiveRateRef.current); // Will adapt between updates
+        }, adaptiveRateRef.current); // Will adjust based on the current value
 
         return () => clearInterval(snapshotInterval);
-    }, [socket, isPhysicsAuthority, gameState.ballsInHole, paused, gameState.gamePhase]);
+    }, [socket, isPhysicsAuthority, gameState, paused]);
 
     // If we're in lobby phase, don't render the full game experience
     if (gameState.gamePhase === 'lobby') {
@@ -402,15 +415,19 @@ const Experience = () => {
             )}
 
             {/* Game information UI */}
-            <Text position={[-6, 8, 0]} fontSize={0.5} color="white">
-                {`${gameState.players[0]?.name || 'Player 1'}: ${gameState.scores?.[0] || 0} points`}
-                {gameState.playerTypes?.[0] ? ` (${gameState.playerTypes[0]})` : ''}
-            </Text>
+            {gameState.players && gameState.players[0] && (
+                <Text position={[-6, 8, 0]} fontSize={0.5} color="white">
+                    {`${gameState.players[0]?.name || 'Player 1'}: ${gameState.scores?.[0] || 0} points`}
+                    {gameState.playerTypes?.[0] ? ` (${gameState.playerTypes[0]})` : ''}
+                </Text>
+            )}
 
-            <Text position={[6, 8, 0]} fontSize={0.5} color="white">
-                {`${gameState.players[1]?.name || 'Player 2'}: ${gameState.scores?.[1] || 0} points`}
-                {gameState.playerTypes?.[1] ? ` (${gameState.playerTypes[1]})` : ''}
-            </Text>
+            {gameState.players && gameState.players[1] && (
+                <Text position={[6, 8, 0]} fontSize={0.5} color="white">
+                    {`${gameState.players[1]?.name || 'Player 2'}: ${gameState.scores?.[1] || 0} points`}
+                    {gameState.playerTypes?.[1] ? ` (${gameState.playerTypes[1]})` : ''}
+                </Text>
+            )}
 
             {gameState.isMyTurn && (
                 <Text position={[0, 7, 0]} fontSize={0.7} color="yellow">
@@ -445,22 +462,23 @@ const Experience = () => {
                 {/* Only render balls after everything is loaded */}
                 {allLoaded && (
                     <>
-                        {!gameState.ballsInHole?.includes(cueBall) && 
+                        {(!gameState.ballsInHole || !gameState.ballsInHole.includes(cueBall)) && (
                             <PoolBall 
                                 position={ballPositions[cueBall]} 
                                 ballNumber={cueBall} 
                                 registerRef={registerBall}
                             />
-                        }
+                        )}
                         
                         {balls.map(ball => (
-                            !gameState.ballsInHole?.includes(ball) && 
-                            <PoolBall 
-                                key={ball} 
-                                position={ballPositions[ball]} 
-                                ballNumber={ball} 
-                                registerRef={registerBall}
-                            />
+                            (!gameState.ballsInHole || !gameState.ballsInHole.includes(ball)) && (
+                                <PoolBall 
+                                    key={ball} 
+                                    position={ballPositions[ball]} 
+                                    ballNumber={ball} 
+                                    registerRef={registerBall}
+                                />
+                            )
                         ))}
                     </>
                 )}
